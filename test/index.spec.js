@@ -1,20 +1,52 @@
-import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
-import worker from '../src';
+import { unstable_dev } from 'wrangler';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 
-describe('Hello World worker', () => {
-	it('responds with Hello World! (unit style)', async () => {
-		const request = new Request('http://example.com');
-		// Create an empty context to pass to `worker.fetch()`.
-		const ctx = createExecutionContext();
-		const response = await worker.fetch(request, env, ctx);
-		// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
-		await waitOnExecutionContext(ctx);
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
+describe('Worker', () => {
+  let worker;
 
-	it('responds with Hello World! (integration style)', async () => {
-		const response = await SELF.fetch('http://example.com');
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
+  beforeAll(async () => {
+    worker = await unstable_dev('src/index.js', {
+      experimental: { disableExperimentalWarning: true },
+    });
+  });
+
+  afterAll(async () => {
+    await worker.stop();
+  });
+
+  it('should return 404 for non-existent path', async () => {
+    const resp = await worker.fetch('/non-existent');
+    expect(resp.status).toBe(404);
+  });
+
+  it('should return welcome page for root path', async () => {
+    const resp = await worker.fetch('/');
+    expect(resp.status).toBe(200);
+    const text = await resp.text();
+    expect(text).toContain('Welcome to GoGoKodo');
+  });
+
+  it('should render content with template when available', async () => {
+    // First, we need to set up test data in KV
+    const testTemplate = {
+      structure: '<div class="test-template">{{content}}</div>'
+    };
+    const testContent = {
+      templateId: 1,
+      title: 'Test Page',
+      content: 'Test content'
+    };
+
+    // Set the test data in KV namespaces
+    await worker.env.TEMPLATES.put('1', JSON.stringify(testTemplate));
+    await worker.env.CONTENT.put('test', JSON.stringify(testContent));
+
+    // Test the endpoint
+    const resp = await worker.fetch('/test');
+    expect(resp.status).toBe(200);
+    const text = await resp.text();
+    expect(text).toContain('Test Page');
+    expect(text).toContain('Test content');
+    expect(text).toContain('test-template');
+  });
 });
