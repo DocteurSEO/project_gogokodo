@@ -26,6 +26,32 @@ async function getContent(env, path) {
   return await env.CONTENT.get(contentKey, { type: 'json' });
 }
 
+
+app.get('/template', async (c) => {
+  try {
+    const templates = [];
+    const list = await c.env.TEMPLATES.list();
+    
+    for (const key of list.keys) {
+      try {
+        const template = await c.env.TEMPLATES.get(key.name, { type: 'json' });
+        if (template) {
+          templates.push({ id: key.name, structure: template.structure });
+        }
+      } catch (error) {
+        console.error(`Error fetching template ${key.name}:`, error);
+        // Continue with the next template if one fails
+        continue;
+      }
+    }
+    
+    return c.json(templates);
+  } catch (error) {
+    console.error('Error fetching templates:', error);
+    return c.json({ error: 'Failed to fetch templates' }, 500);
+  }
+});
+
 // Middleware to handle dynamic routes
 app.get('/:path', async (c) => {
   const data = await getTemplateAndContent(c.env, c.req.path);
@@ -81,6 +107,9 @@ app.get('/', (c) => {
     </html>
   `);
 });
+
+
+
 
 // Middleware to check admin token
 const checkAdminToken = async (c, next) => {
@@ -151,5 +180,9 @@ app.post('/', checkAdminToken, async (c) => {
   
   return c.json({ message: 'Content created successfully' }, 201);
 });
+
+
+
+
 
 export default app;
